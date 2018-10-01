@@ -1,0 +1,11 @@
+[package]
+name = "syn_util"
+version = "0.1.0"
+authors = ["Boncheol Gu <boncheol.gu@gmail.com>"]
+
+[dependencies]
+proc-macro2 = "0.4"
+syn = { version = "0.14", features = ["extra-traits"] }
+
+[dev-dependencies]
+quote = "0.6"
