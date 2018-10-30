@@ -1,4 +1,4 @@
-[![Build Status](https://www.travis-ci.org/boncheolgu/syn_utils.svg?branch=master)](https://www.travis-ci.org/boncheolgu/syn_util)
+[![Build Status](https://www.travis-ci.org/boncheolgu/syn_util.svg?branch=master)](https://www.travis-ci.org/boncheolgu/syn_util)
 
 # Helper APIs for Rust procedural macros
 
