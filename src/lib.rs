@@ -28,29 +28,24 @@ pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
 }
 
 fn contains_attribute_impl<'a>(meta: &'a Meta, id: &[&str]) -> bool {
-    if id.len() < 2 {
+    if id.is_empty() {
         return false;
     }
 
-    if let Meta::List(meta_list) = meta {
-        if meta_list.ident != id[0] {
-            return false;
-        }
-
-        for nested_meta in &meta_list.nested {
-            if let NestedMeta::Meta(meta) = nested_meta {
-                if let Meta::Word(ref ident) = *meta {
-                    if ident == id[1] {
+    match meta {
+        Meta::Word(ref ident) => id.len() == 1 && ident == id[0],
+        Meta::List(meta_list) if meta_list.ident == id[0] => {
+            for nested_meta in &meta_list.nested {
+                if let NestedMeta::Meta(meta) = nested_meta {
+                    if contains_attribute_impl(meta, &id[1..]) {
                         return true;
                     }
-                } else {
-                    return contains_attribute_impl(meta, &id[1..]);
                 }
             }
+            false
         }
+        _ => false,
     }
-
-    false
 }
 
 pub fn get_attribute_value(attrs: &[Attribute], id: &[&str]) -> Option<Lit> {
@@ -70,7 +65,7 @@ pub fn get_attribute_value(attrs: &[Attribute], id: &[&str]) -> Option<Lit> {
 }
 
 fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<Lit> {
-    if id.len() < 1 {
+    if id.is_empty() {
         return None;
     }
 
@@ -173,7 +168,10 @@ mod test {
 
     #[test]
     fn test_contains_attribute_impl() {
-        let attr: Attribute = parse_quote!(#[level0(level1, level1_1(level2, level2_1 = "hello"))]);
+        let attr: Attribute = parse_quote!(#[level0]);
+        assert!(contains_attribute(&[attr], &["level0"]));
+
+        let attr: Attribute = parse_quote!(#[level0(level1, level1_1(level2, level2_1 = "hello", level2_2), level1_2)]);
         let attr = [attr];
 
         assert!(!contains_attribute(&attr, &[]));
@@ -186,7 +184,14 @@ mod test {
 
         assert!(!contains_attribute(&attr, &["level0", "level1_1"]),);
 
+        assert!(contains_attribute(&attr, &["level0", "level1_2"]),);
+
         assert!(contains_attribute(&attr, &["level0", "level1_1", "level2"]),);
+
+        assert!(contains_attribute(
+            &attr,
+            &["level0", "level1_1", "level2_2"]
+        ),);
 
         assert!(!contains_attribute(
             &attr,
@@ -233,6 +238,12 @@ mod test {
 
     #[test]
     fn test_get_attribute_value() {
+        let attr: Attribute = parse_quote!(#[level0 = "hi"]);
+        assert_eq!(
+            get_attribute_value(&[attr], &["level0"]),
+            Some(lit_str("hi"))
+        );
+
         let attr: Attribute = parse_quote!(#[level0(level1 = "hi", level1_1(level2 = "bye"))]);
         let attr = [attr];
 
@@ -284,6 +295,7 @@ mod test {
             get_attribute_map(
                 &[
                     parse_quote!(#[level9]),
+                    parse_quote!(#[level0_0 = "greeting"]),
                     parse_quote!(#[level0(level8)]),
                     parse_quote!(#[level0(level1 = "hi", level1_1(level2 = "bye"))]),
                     parse_quote!(#[level0(level1 = "hi", level1_1(level2 = "bye"))]),
@@ -292,6 +304,7 @@ mod test {
                 "."
             ),
             vec![
+                ("level0_0".to_string(), vec![lit_str("greeting")]),
                 ("level9".to_string(), vec![]),
                 ("level0.level8".to_string(), vec![]),
                 (
