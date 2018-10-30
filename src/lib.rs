@@ -272,8 +272,9 @@ mod test {
                     vec![lit_str("hi"), lit_str("hi")],
                 ),
                 ("level0.level1_1.level2".to_string(), vec![lit_str("bye")]),
-            ].into_iter()
-                .collect()
+            ]
+            .into_iter()
+            .collect()
         );
     }
 
@@ -304,8 +305,9 @@ mod test {
                 ("gen0.gen1".to_string(), vec![lit_str("amoeba")]),
                 ("gen0.gen1_1".to_string(), vec![lit_str("monad")]),
                 ("gen0.gen1_2.gen2".to_string(), vec![lit_str("monoid")]),
-            ].into_iter()
-                .collect()
+            ]
+            .into_iter()
+            .collect()
         );
     }
 }
