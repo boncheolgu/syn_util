@@ -1,6 +1,5 @@
 #[cfg(test)]
 extern crate proc_macro2;
-#[cfg(test)]
 #[macro_use]
 #[allow(unused_imports)]
 extern crate quote;
@@ -22,6 +21,8 @@ pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
             if contains_attribute_impl(&meta, &id) {
                 return true;
             }
+        } else {
+            panic!("cannot parse attributes: {}", quote!(#attr));
         }
     }
 
@@ -59,6 +60,8 @@ pub fn get_attribute_value(attrs: &[Attribute], id: &[&str]) -> Option<Lit> {
             if let Some(value) = get_attribute_value_impl(&meta, &id) {
                 return Some(value);
             }
+        } else {
+            panic!("cannot parse attributes: {}", quote!(#attr));
         }
     }
 
@@ -99,6 +102,8 @@ pub fn get_attribute_map(attrs: &[Attribute], separator: &str) -> HashMap<String
 
         if let Some(meta) = attr.interpret_meta() {
             get_attribute_map_impl(&mut result, &meta, "", separator);
+        } else {
+            panic!("cannot parse attributes: {}", quote!(#attr));
         }
     }
 
