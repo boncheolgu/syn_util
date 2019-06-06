@@ -2,6 +2,7 @@
 extern crate proc_macro2;
 #[cfg(test)]
 #[macro_use]
+#[allow(unused_imports)]
 extern crate quote;
 #[macro_use]
 #[allow(unused_imports)]
@@ -72,11 +73,7 @@ fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<Lit> {
     match meta {
         Meta::NameValue(MetaNameValue {
             ref ident, ref lit, ..
-        })
-            if ident == id[0] =>
-        {
-            Some(lit.clone())
-        }
+        }) if ident == id[0] => Some(lit.clone()),
         Meta::List(meta_list) if meta_list.ident == id[0] => {
             for nested_meta in &meta_list.nested {
                 if let NestedMeta::Meta(meta) = nested_meta {

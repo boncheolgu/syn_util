@@ -1,8 +1,8 @@
 [package]
 name = "syn_util"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Boncheol Gu <boncheol.gu@gmail.com>"]
-
+edition = "2018"
 description = "helper APIs for procedural macros"
 keywords = ["procmacro", "syn"]
 license = "MIT/Apache-2.0"
@@ -11,7 +11,7 @@ readme = "README.md"
 
 [dependencies]
 proc-macro2 = "0.4"
-syn = { version = "0.14", features = ["extra-traits"] }
+syn = { version = "0.15", features = ["extra-traits"] }
 
 [dev-dependencies]
 quote = "0.6"
