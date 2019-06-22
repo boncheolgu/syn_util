@@ -7,8 +7,11 @@ extern crate quote;
 #[allow(unused_imports)]
 extern crate syn;
 
+mod lit_cast;
+
 use std::collections::HashMap;
 
+use crate::lit_cast::FromLit;
 use syn::{AttrStyle, Attribute, Lit, Meta, MetaNameValue, NestedMeta};
 
 pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
@@ -50,7 +53,7 @@ fn contains_attribute_impl<'a>(meta: &'a Meta, id: &[&str]) -> bool {
     }
 }
 
-pub fn get_attribute_value(attrs: &[Attribute], id: &[&str]) -> Option<Lit> {
+pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Option<T> {
     for attr in attrs {
         if attr.style != AttrStyle::Outer {
             continue;
@@ -58,7 +61,9 @@ pub fn get_attribute_value(attrs: &[Attribute], id: &[&str]) -> Option<Lit> {
 
         if let Some(meta) = attr.interpret_meta() {
             if let Some(value) = get_attribute_value_impl(&meta, &id) {
-                return Some(value);
+                if let Ok(parsed) = T::from_lit(value) {
+                    return Some(parsed);
+                }
             }
         } else {
             panic!("cannot parse attributes: {}", quote!(#attr));
@@ -184,20 +189,20 @@ mod test {
 
         assert!(contains_attribute(&attr, &["level0", "level1"]));
 
-        assert!(!contains_attribute(&attr, &["level0", "level1_1"]),);
+        assert!(!contains_attribute(&attr, &["level0", "level1_1"]));
 
-        assert!(contains_attribute(&attr, &["level0", "level1_2"]),);
+        assert!(contains_attribute(&attr, &["level0", "level1_2"]));
 
-        assert!(contains_attribute(&attr, &["level0", "level1_1", "level2"]),);
+        assert!(contains_attribute(&attr, &["level0", "level1_1", "level2"]));
 
         assert!(contains_attribute(
             &attr,
-            &["level0", "level1_1", "level2_2"]
+            &["level0", "level1_1", "level2_2"],
         ),);
 
         assert!(!contains_attribute(
             &attr,
-            &["level0", "level1_1", "level2_1"]
+            &["level0", "level1_1", "level2_1"],
         ),);
     }
 
@@ -246,25 +251,28 @@ mod test {
             Some(lit_str("hi"))
         );
 
-        let attr: Attribute = parse_quote!(#[level0(level1 = "hi", level1_1(level2 = "bye"))]);
+        let attr: Attribute = parse_quote!(#[level0(level1 = "hi", level1_1(level2 = false))]);
         let attr = [attr];
 
-        assert_eq!(get_attribute_value(&attr, &[""]), None);
+        assert_eq!(get_attribute_value::<String>(&attr, &[""]), None);
 
-        assert_eq!(get_attribute_value(&attr, &["not"]), None);
+        assert_eq!(get_attribute_value::<String>(&attr, &["not"]), None);
 
-        assert_eq!(get_attribute_value(&attr, &["level0"]), None);
+        assert_eq!(get_attribute_value::<String>(&attr, &["level0"]), None);
 
         assert_eq!(
             get_attribute_value(&attr, &["level0", "level1"]),
-            Some(lit_str("hi"))
+            Some("hi".to_string())
         );
 
-        assert_eq!(get_attribute_value(&attr, &["level0", "level1_1"]), None);
+        assert_eq!(
+            get_attribute_value::<Lit>(&attr, &["level0", "level1_1"]),
+            None
+        );
 
         assert_eq!(
             get_attribute_value(&attr, &["level0", "level1_1", "level2"]),
-            Some(lit_str("bye"))
+            Some(false)
         );
     }
 
@@ -303,7 +311,7 @@ mod test {
                     parse_quote!(#[level0(level1 = "hi", level1_1(level2 = "bye"))]),
                     parse_quote!(#[gen0(gen1 = "amoeba", gen1_1 = "monad", gen1_2(gen2 = "monoid"))])
                 ],
-                "."
+                ".",
             ),
             vec![
                 ("level0_0".to_string(), vec![lit_str("greeting")]),
