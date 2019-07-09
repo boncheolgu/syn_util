@@ -1,6 +1,6 @@
 [package]
 name = "syn_util"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Boncheol Gu <boncheol.gu@gmail.com>"]
 edition = "2018"
 description = "helper APIs for procedural macros"
