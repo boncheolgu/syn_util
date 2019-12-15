@@ -12,7 +12,7 @@ mod lit_cast;
 use std::collections::HashMap;
 
 use crate::lit_cast::FromLit;
-use syn::{AttrStyle, Attribute, Lit, Meta, MetaNameValue, NestedMeta};
+use syn::{AttrStyle, Attribute, Lit, Meta, MetaNameValue, NestedMeta, Path};
 
 pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
     for attr in attrs {
@@ -20,7 +20,7 @@ pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
             continue;
         }
 
-        if let Some(meta) = attr.interpret_meta() {
+        if let Ok(meta) = attr.parse_meta() {
             if contains_attribute_impl(&meta, &id) {
                 return true;
             }
@@ -38,8 +38,8 @@ fn contains_attribute_impl<'a>(meta: &'a Meta, id: &[&str]) -> bool {
     }
 
     match meta {
-        Meta::Word(ref ident) => id.len() == 1 && ident == id[0],
-        Meta::List(meta_list) if meta_list.ident == id[0] => {
+        Meta::Path(ref path) => id.len() == 1 && path.is_ident(id[0]),
+        Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
             for nested_meta in &meta_list.nested {
                 if let NestedMeta::Meta(meta) = nested_meta {
                     if contains_attribute_impl(meta, &id[1..]) {
@@ -59,7 +59,7 @@ pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Opti
             continue;
         }
 
-        if let Some(meta) = attr.interpret_meta() {
+        if let Ok(meta) = attr.parse_meta() {
             if let Some(value) = get_attribute_value_impl(&meta, &id) {
                 if let Ok(parsed) = T::from_lit(value) {
                     return Some(parsed);
@@ -80,9 +80,9 @@ fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<Lit> {
 
     match meta {
         Meta::NameValue(MetaNameValue {
-            ref ident, ref lit, ..
-        }) if ident == id[0] => Some(lit.clone()),
-        Meta::List(meta_list) if meta_list.ident == id[0] => {
+            ref path, ref lit, ..
+        }) if path.is_ident(id[0]) => Some(lit.clone()),
+        Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
             for nested_meta in &meta_list.nested {
                 if let NestedMeta::Meta(meta) = nested_meta {
                     let r = get_attribute_value_impl(meta, &id[1..]);
@@ -105,7 +105,7 @@ pub fn get_attribute_map(attrs: &[Attribute], separator: &str) -> HashMap<String
             continue;
         }
 
-        if let Some(meta) = attr.interpret_meta() {
+        if let Ok(meta) = attr.parse_meta() {
             get_attribute_map_impl(&mut result, &meta, "", separator);
         } else {
             panic!("cannot parse attributes: {}", quote!(#attr));
@@ -122,22 +122,22 @@ fn get_attribute_map_impl(
     separator: &str,
 ) {
     match meta {
-        Meta::Word(ref ident) => {
+        Meta::Path(ref path) => {
             let key = if prefix.is_empty() {
-                ident.to_string()
+                path_to_string(path)
             } else {
-                format!("{}{}{}", prefix, separator, ident)
+                format!("{}{}{}", prefix, separator, path_to_string(path))
             };
             assert!(!map.contains_key(&key), "{} already exists.", key);
             map.insert(key, vec![]);
         }
         Meta::NameValue(MetaNameValue {
-            ref ident, ref lit, ..
+            ref path, ref lit, ..
         }) => {
             let key = if prefix.is_empty() {
-                ident.to_string()
+                path_to_string(path)
             } else {
-                format!("{}{}{}", prefix, separator, ident)
+                format!("{}{}{}", prefix, separator, path_to_string(path))
             };
             map.get_mut(&key)
                 .map(|value| {
@@ -150,9 +150,9 @@ fn get_attribute_map_impl(
         }
         Meta::List(meta_list) => {
             let key = if prefix.is_empty() {
-                meta_list.ident.to_string()
+                path_to_string(&meta_list.path)
             } else {
-                format!("{}{}{}", prefix, separator, meta_list.ident)
+                format!("{}{}{}", prefix, separator, path_to_string(&meta_list.path))
             };
             for nested_meta in &meta_list.nested {
                 if let NestedMeta::Meta(meta) = nested_meta {
@@ -161,6 +161,15 @@ fn get_attribute_map_impl(
             }
         }
     }
+}
+
+fn path_to_string(path: &Path) -> String {
+    let segments: Vec<String> = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect();
+    segments.join("::")
 }
 
 #[cfg(test)]
@@ -210,7 +219,7 @@ mod test {
     fn test_get_attribute_value_impl() {
         let attr: Attribute = parse_quote!(#[level0(level1 = "hi", level1_1(level2 = "bye"))]);
 
-        let meta = attr.interpret_meta().unwrap();
+        let meta = attr.parse_meta().unwrap();
 
         assert_eq!(get_attribute_value_impl(&meta, &[]), None);
 
@@ -235,7 +244,7 @@ mod test {
 
         let attr: Attribute = parse_quote!(#[doc = "hi"]);
 
-        let meta = attr.interpret_meta().unwrap();
+        let meta = attr.parse_meta().unwrap();
 
         assert_eq!(
             get_attribute_value_impl(&meta, &["doc"]),
@@ -281,7 +290,7 @@ mod test {
         let attr: Attribute =
             parse_quote!(#[level0(level1 = "hi", level1 = "hi", level1_1(level2 = "bye"))]);
 
-        let meta = attr.interpret_meta().unwrap();
+        let meta = attr.parse_meta().unwrap();
 
         let mut result = HashMap::new();
         get_attribute_map_impl(&mut result, &meta, "", ".");
