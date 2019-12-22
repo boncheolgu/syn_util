@@ -16,7 +16,7 @@ impl FromLit for Lit {
 impl FromLit for u64 {
     fn from_lit(lit: Lit) -> Result<Self, CastError> {
         match lit {
-            Lit::Int(int) => Ok(int.value()),
+            Lit::Int(int) => int.base10_parse().map_err(|_| CastError),
             _ => Err(CastError),
         }
     }
@@ -25,7 +25,7 @@ impl FromLit for u64 {
 impl FromLit for f64 {
     fn from_lit(lit: Lit) -> Result<Self, CastError> {
         match lit {
-            Lit::Float(float) => Ok(float.value()),
+            Lit::Float(float) => float.base10_parse().map_err(|_| CastError),
             _ => Err(CastError),
         }
     }
