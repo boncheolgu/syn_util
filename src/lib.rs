@@ -24,8 +24,6 @@ pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
             if contains_attribute_impl(&meta, &id) {
                 return true;
             }
-        } else {
-            panic!("cannot parse attributes: {}", quote!(#attr));
         }
     }
 
@@ -65,8 +63,6 @@ pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Opti
                     return Some(parsed);
                 }
             }
-        } else {
-            panic!("cannot parse attributes: {}", quote!(#attr));
         }
     }
 
@@ -107,8 +103,6 @@ pub fn get_attribute_map(attrs: &[Attribute], separator: &str) -> HashMap<String
 
         if let Ok(meta) = attr.parse_meta() {
             get_attribute_map_impl(&mut result, &meta, "", separator);
-        } else {
-            panic!("cannot parse attributes: {}", quote!(#attr));
         }
     }
 
