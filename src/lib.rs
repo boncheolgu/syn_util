@@ -1,18 +1,11 @@
-#[cfg(test)]
-extern crate proc_macro2;
-#[macro_use]
-#[allow(unused_imports)]
-extern crate quote;
-#[macro_use]
-#[allow(unused_imports)]
-extern crate syn;
-
 mod lit_cast;
 
 use std::collections::HashMap;
 
+use pmutil::ToTokensExt;
+use syn::{AttrStyle, Attribute, Lit, Meta, MetaNameValue, NestedMeta};
+
 use crate::lit_cast::FromLit;
-use syn::{AttrStyle, Attribute, Lit, Meta, MetaNameValue, NestedMeta, Path};
 
 pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
     for attr in attrs {
@@ -36,7 +29,7 @@ fn contains_attribute_impl<'a>(meta: &'a Meta, id: &[&str]) -> bool {
     }
 
     match meta {
-        Meta::Path(ref path) => id.len() == 1 && path.is_ident(id[0]),
+        Meta::Path(path) => id.len() == 1 && path.is_ident(id[0]),
         Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
             for nested_meta in &meta_list.nested {
                 if let NestedMeta::Meta(meta) = nested_meta {
@@ -59,7 +52,7 @@ pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Opti
 
         if let Ok(meta) = attr.parse_meta() {
             if let Some(value) = get_attribute_value_impl(&meta, &id) {
-                if let Ok(parsed) = T::from_lit(value) {
+                if let Ok(parsed) = T::from_lit(value.clone()) {
                     return Some(parsed);
                 }
             }
@@ -69,15 +62,13 @@ pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Opti
     None
 }
 
-fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<Lit> {
+fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<&'a Lit> {
     if id.is_empty() {
         return None;
     }
 
     match meta {
-        Meta::NameValue(MetaNameValue {
-            ref path, ref lit, ..
-        }) if path.is_ident(id[0]) => Some(lit.clone()),
+        Meta::NameValue(MetaNameValue { path, lit, .. }) if path.is_ident(id[0]) => Some(lit),
         Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
             for nested_meta in &meta_list.nested {
                 if let NestedMeta::Meta(meta) = nested_meta {
@@ -109,29 +100,27 @@ pub fn get_attribute_map(attrs: &[Attribute], separator: &str) -> HashMap<String
     result
 }
 
-fn get_attribute_map_impl(
+fn get_attribute_map_impl<'a>(
     map: &mut HashMap<String, Vec<Lit>>,
     meta: &Meta,
     prefix: &str,
     separator: &str,
 ) {
     match meta {
-        Meta::Path(ref path) => {
+        Meta::Path(path) => {
             let key = if prefix.is_empty() {
-                path_to_string(path)
+                path.dump().to_string()
             } else {
-                format!("{}{}{}", prefix, separator, path_to_string(path))
+                format!("{}{}{}", prefix, separator, path.dump())
             };
             assert!(!map.contains_key(&key), "{} already exists.", key);
             map.insert(key, vec![]);
         }
-        Meta::NameValue(MetaNameValue {
-            ref path, ref lit, ..
-        }) => {
+        Meta::NameValue(MetaNameValue { path, lit, .. }) => {
             let key = if prefix.is_empty() {
-                path_to_string(path)
+                path.dump().to_string()
             } else {
-                format!("{}{}{}", prefix, separator, path_to_string(path))
+                format!("{}{}{}", prefix, separator, path.dump())
             };
             map.get_mut(&key)
                 .map(|value| {
@@ -144,9 +133,9 @@ fn get_attribute_map_impl(
         }
         Meta::List(meta_list) => {
             let key = if prefix.is_empty() {
-                path_to_string(&meta_list.path)
+                meta_list.path.dump().to_string()
             } else {
-                format!("{}{}{}", prefix, separator, path_to_string(&meta_list.path))
+                format!("{}{}{}", prefix, separator, meta_list.path.dump())
             };
             for nested_meta in &meta_list.nested {
                 if let NestedMeta::Meta(meta) = nested_meta {
@@ -157,20 +146,11 @@ fn get_attribute_map_impl(
     }
 }
 
-fn path_to_string(path: &Path) -> String {
-    let segments: Vec<String> = path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect();
-    segments.join("::")
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use proc_macro2::Span;
-    use syn::LitStr;
+    use syn::{parse_quote, LitStr};
 
     fn lit_str(s: &str) -> Lit {
         Lit::Str(LitStr::new(s, Span::call_site()))
@@ -198,15 +178,9 @@ mod test {
 
         assert!(contains_attribute(&attr, &["level0", "level1_1", "level2"]));
 
-        assert!(contains_attribute(
-            &attr,
-            &["level0", "level1_1", "level2_2"],
-        ),);
+        assert!(contains_attribute(&attr, &["level0", "level1_1", "level2_2"],),);
 
-        assert!(!contains_attribute(
-            &attr,
-            &["level0", "level1_1", "level2_1"],
-        ),);
+        assert!(!contains_attribute(&attr, &["level0", "level1_1", "level2_1"],),);
     }
 
     #[test]
@@ -221,38 +195,26 @@ mod test {
 
         assert_eq!(get_attribute_value_impl(&meta, &["level0"]), None);
 
-        assert_eq!(
-            get_attribute_value_impl(&meta, &["level0", "level1"]),
-            Some(lit_str("hi"))
-        );
+        assert_eq!(get_attribute_value_impl(&meta, &["level0", "level1"]), Some(&lit_str("hi")));
 
-        assert_eq!(
-            get_attribute_value_impl(&meta, &["level0", "level1_1"]),
-            None
-        );
+        assert_eq!(get_attribute_value_impl(&meta, &["level0", "level1_1"]), None);
 
         assert_eq!(
             get_attribute_value_impl(&meta, &["level0", "level1_1", "level2"]),
-            Some(lit_str("bye"))
+            Some(&lit_str("bye"))
         );
 
         let attr: Attribute = parse_quote!(#[doc = "hi"]);
 
         let meta = attr.parse_meta().unwrap();
 
-        assert_eq!(
-            get_attribute_value_impl(&meta, &["doc"]),
-            Some(lit_str("hi"))
-        );
+        assert_eq!(get_attribute_value_impl(&meta, &["doc"]), Some(&lit_str("hi")));
     }
 
     #[test]
     fn test_get_attribute_value() {
         let attr: Attribute = parse_quote!(#[level0 = "hi"]);
-        assert_eq!(
-            get_attribute_value(&[attr], &["level0"]),
-            Some(lit_str("hi"))
-        );
+        assert_eq!(get_attribute_value(&[attr], &["level0"]), Some(lit_str("hi")));
 
         let attr: Attribute = parse_quote!(#[level0(level1 = "hi", level1_1(level2 = false))]);
         let attr = [attr];
@@ -263,20 +225,11 @@ mod test {
 
         assert_eq!(get_attribute_value::<String>(&attr, &["level0"]), None);
 
-        assert_eq!(
-            get_attribute_value(&attr, &["level0", "level1"]),
-            Some("hi".to_string())
-        );
+        assert_eq!(get_attribute_value(&attr, &["level0", "level1"]), Some("hi".to_string()));
 
-        assert_eq!(
-            get_attribute_value::<Lit>(&attr, &["level0", "level1_1"]),
-            None
-        );
+        assert_eq!(get_attribute_value::<Lit>(&attr, &["level0", "level1_1"]), None);
 
-        assert_eq!(
-            get_attribute_value(&attr, &["level0", "level1_1", "level2"]),
-            Some(false)
-        );
+        assert_eq!(get_attribute_value(&attr, &["level0", "level1_1", "level2"]), Some(false));
     }
 
     #[test]
@@ -291,10 +244,7 @@ mod test {
         assert_eq!(
             result,
             vec![
-                (
-                    "level0.level1".to_string(),
-                    vec![lit_str("hi"), lit_str("hi")],
-                ),
+                ("level0.level1".to_string(), vec![lit_str("hi"), lit_str("hi")],),
                 ("level0.level1_1.level2".to_string(), vec![lit_str("bye")]),
             ]
             .into_iter()
@@ -320,14 +270,8 @@ mod test {
                 ("level0_0".to_string(), vec![lit_str("greeting")]),
                 ("level9".to_string(), vec![]),
                 ("level0.level8".to_string(), vec![]),
-                (
-                    "level0.level1".to_string(),
-                    vec![lit_str("hi"), lit_str("hi")],
-                ),
-                (
-                    "level0.level1_1.level2".to_string(),
-                    vec![lit_str("bye"), lit_str("bye")],
-                ),
+                ("level0.level1".to_string(), vec![lit_str("hi"), lit_str("hi")],),
+                ("level0.level1_1.level2".to_string(), vec![lit_str("bye"), lit_str("bye")],),
                 ("gen0.gen1".to_string(), vec![lit_str("amoeba")]),
                 ("gen0.gen1_1".to_string(), vec![lit_str("monad")]),
                 ("gen0.gen1_2.gen2".to_string(), vec![lit_str("monoid")]),

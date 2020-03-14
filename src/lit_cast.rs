@@ -52,7 +52,7 @@ impl FromLit for String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use syn::Lit;
+    use syn::{parse_quote, Lit};
 
     #[test]
     fn test_int() {
