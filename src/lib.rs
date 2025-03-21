@@ -178,9 +178,15 @@ mod test {
 
         assert!(contains_attribute(&attr, &["level0", "level1_1", "level2"]));
 
-        assert!(contains_attribute(&attr, &["level0", "level1_1", "level2_2"],),);
+        assert!(contains_attribute(
+            &attr,
+            &["level0", "level1_1", "level2_2"],
+        ),);
 
-        assert!(!contains_attribute(&attr, &["level0", "level1_1", "level2_1"],),);
+        assert!(!contains_attribute(
+            &attr,
+            &["level0", "level1_1", "level2_1"],
+        ),);
     }
 
     #[test]
@@ -195,9 +201,15 @@ mod test {
 
         assert_eq!(get_attribute_value_impl(&meta, &["level0"]), None);
 
-        assert_eq!(get_attribute_value_impl(&meta, &["level0", "level1"]), Some(&lit_str("hi")));
+        assert_eq!(
+            get_attribute_value_impl(&meta, &["level0", "level1"]),
+            Some(&lit_str("hi"))
+        );
 
-        assert_eq!(get_attribute_value_impl(&meta, &["level0", "level1_1"]), None);
+        assert_eq!(
+            get_attribute_value_impl(&meta, &["level0", "level1_1"]),
+            None
+        );
 
         assert_eq!(
             get_attribute_value_impl(&meta, &["level0", "level1_1", "level2"]),
@@ -208,13 +220,19 @@ mod test {
 
         let meta = attr.parse_meta().unwrap();
 
-        assert_eq!(get_attribute_value_impl(&meta, &["doc"]), Some(&lit_str("hi")));
+        assert_eq!(
+            get_attribute_value_impl(&meta, &["doc"]),
+            Some(&lit_str("hi"))
+        );
     }
 
     #[test]
     fn test_get_attribute_value() {
         let attr: Attribute = parse_quote!(#[level0 = "hi"]);
-        assert_eq!(get_attribute_value(&[attr], &["level0"]), Some(lit_str("hi")));
+        assert_eq!(
+            get_attribute_value(&[attr], &["level0"]),
+            Some(lit_str("hi"))
+        );
 
         let attr: Attribute = parse_quote!(#[level0(level1 = "hi", level1_1(level2 = false))]);
         let attr = [attr];
@@ -225,11 +243,20 @@ mod test {
 
         assert_eq!(get_attribute_value::<String>(&attr, &["level0"]), None);
 
-        assert_eq!(get_attribute_value(&attr, &["level0", "level1"]), Some("hi".to_string()));
+        assert_eq!(
+            get_attribute_value(&attr, &["level0", "level1"]),
+            Some("hi".to_string())
+        );
 
-        assert_eq!(get_attribute_value::<Lit>(&attr, &["level0", "level1_1"]), None);
+        assert_eq!(
+            get_attribute_value::<Lit>(&attr, &["level0", "level1_1"]),
+            None
+        );
 
-        assert_eq!(get_attribute_value(&attr, &["level0", "level1_1", "level2"]), Some(false));
+        assert_eq!(
+            get_attribute_value(&attr, &["level0", "level1_1", "level2"]),
+            Some(false)
+        );
     }
 
     #[test]
@@ -244,7 +271,10 @@ mod test {
         assert_eq!(
             result,
             vec![
-                ("level0.level1".to_string(), vec![lit_str("hi"), lit_str("hi")],),
+                (
+                    "level0.level1".to_string(),
+                    vec![lit_str("hi"), lit_str("hi")],
+                ),
                 ("level0.level1_1.level2".to_string(), vec![lit_str("bye")]),
             ]
             .into_iter()
@@ -270,8 +300,14 @@ mod test {
                 ("level0_0".to_string(), vec![lit_str("greeting")]),
                 ("level9".to_string(), vec![]),
                 ("level0.level8".to_string(), vec![]),
-                ("level0.level1".to_string(), vec![lit_str("hi"), lit_str("hi")],),
-                ("level0.level1_1.level2".to_string(), vec![lit_str("bye"), lit_str("bye")],),
+                (
+                    "level0.level1".to_string(),
+                    vec![lit_str("hi"), lit_str("hi")],
+                ),
+                (
+                    "level0.level1_1.level2".to_string(),
+                    vec![lit_str("bye"), lit_str("bye")],
+                ),
                 ("gen0.gen1".to_string(), vec![lit_str("amoeba")]),
                 ("gen0.gen1_1".to_string(), vec![lit_str("monad")]),
                 ("gen0.gen1_2.gen2".to_string(), vec![lit_str("monoid")]),
