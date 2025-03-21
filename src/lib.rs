@@ -3,7 +3,8 @@ mod lit_cast;
 use std::collections::HashMap;
 
 use pmutil::ToTokensExt;
-use syn::{AttrStyle, Attribute, Lit, Meta, MetaNameValue, NestedMeta};
+use syn::punctuated::Punctuated;
+use syn::{AttrStyle, Attribute, Expr, ExprLit, Lit, Meta, MetaNameValue, Token};
 
 use crate::lit_cast::FromLit;
 
@@ -13,10 +14,9 @@ pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
             continue;
         }
 
-        if let Ok(meta) = attr.parse_meta() {
-            if contains_attribute_impl(&meta, &id) {
-                return true;
-            }
+        let meta = &attr.meta;
+        if contains_attribute_impl(&meta, &id) {
+            return true;
         }
     }
 
@@ -31,14 +31,17 @@ fn contains_attribute_impl<'a>(meta: &'a Meta, id: &[&str]) -> bool {
     match meta {
         Meta::Path(path) => id.len() == 1 && path.is_ident(id[0]),
         Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
-            for nested_meta in &meta_list.nested {
-                if let NestedMeta::Meta(meta) = nested_meta {
-                    if contains_attribute_impl(meta, &id[1..]) {
-                        return true;
+            match meta_list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
+                Ok(nested_meta) => {
+                    for meta in nested_meta {
+                        if contains_attribute_impl(&meta, &id[1..]) {
+                            return true;
+                        }
                     }
+                    false
                 }
+                Err(..) => false,
             }
-            false
         }
         _ => false,
     }
@@ -50,11 +53,10 @@ pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Opti
             continue;
         }
 
-        if let Ok(meta) = attr.parse_meta() {
-            if let Some(value) = get_attribute_value_impl(&meta, &id) {
-                if let Ok(parsed) = T::from_lit(value.clone()) {
-                    return Some(parsed);
-                }
+        let meta = &attr.meta;
+        if let Some(value) = get_attribute_value_impl(&meta, &id) {
+            if let Ok(parsed) = T::from_lit(value.clone()) {
+                return Some(parsed);
             }
         }
     }
@@ -62,23 +64,30 @@ pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Opti
     None
 }
 
-fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<&'a Lit> {
+fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<Lit> {
     if id.is_empty() {
         return None;
     }
 
     match meta {
-        Meta::NameValue(MetaNameValue { path, lit, .. }) if path.is_ident(id[0]) => Some(lit),
+        Meta::NameValue(MetaNameValue {
+            path,
+            value: Expr::Lit(ExprLit { lit, .. }),
+            ..
+        }) if path.is_ident(id[0]) => Some(lit.clone()),
         Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
-            for nested_meta in &meta_list.nested {
-                if let NestedMeta::Meta(meta) = nested_meta {
-                    let r = get_attribute_value_impl(meta, &id[1..]);
-                    if r.is_some() {
-                        return r;
+            match meta_list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
+                Ok(nested_meta) => {
+                    for meta in nested_meta {
+                        let r = get_attribute_value_impl(&meta, &id[1..]);
+                        if r.is_some() {
+                            return r;
+                        }
                     }
+                    None
                 }
+                Err(..) => None,
             }
-            None
         }
         _ => None,
     }
@@ -92,9 +101,8 @@ pub fn get_attribute_map(attrs: &[Attribute], separator: &str) -> HashMap<String
             continue;
         }
 
-        if let Ok(meta) = attr.parse_meta() {
-            get_attribute_map_impl(&mut result, &meta, "", separator);
-        }
+        let meta = &attr.meta;
+        get_attribute_map_impl(&mut result, &meta, "", separator);
     }
 
     result
@@ -116,7 +124,11 @@ fn get_attribute_map_impl<'a>(
             assert!(!map.contains_key(&key), "{} already exists.", key);
             map.insert(key, vec![]);
         }
-        Meta::NameValue(MetaNameValue { path, lit, .. }) => {
+        Meta::NameValue(MetaNameValue {
+            path,
+            value: Expr::Lit(ExprLit { lit, .. }),
+            ..
+        }) => {
             let key = if prefix.is_empty() {
                 path.dump().to_string()
             } else {
@@ -131,16 +143,20 @@ fn get_attribute_map_impl<'a>(
                     map.insert(key, vec![lit.clone()]);
                 })
         }
+        Meta::NameValue(..) => (),
         Meta::List(meta_list) => {
             let key = if prefix.is_empty() {
                 meta_list.path.dump().to_string()
             } else {
                 format!("{}{}{}", prefix, separator, meta_list.path.dump())
             };
-            for nested_meta in &meta_list.nested {
-                if let NestedMeta::Meta(meta) = nested_meta {
-                    get_attribute_map_impl(map, &meta, &key, separator);
+            match meta_list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
+                Ok(nested_meta) => {
+                    for meta in nested_meta {
+                        get_attribute_map_impl(map, &meta, &key, separator);
+                    }
                 }
+                Err(..) => (),
             }
         }
     }
@@ -193,7 +209,7 @@ mod test {
     fn test_get_attribute_value_impl() {
         let attr: Attribute = parse_quote!(#[level0(level1 = "hi", level1_1(level2 = "bye"))]);
 
-        let meta = attr.parse_meta().unwrap();
+        let meta = attr.meta;
 
         assert_eq!(get_attribute_value_impl(&meta, &[]), None);
 
@@ -203,7 +219,7 @@ mod test {
 
         assert_eq!(
             get_attribute_value_impl(&meta, &["level0", "level1"]),
-            Some(&lit_str("hi"))
+            Some(lit_str("hi"))
         );
 
         assert_eq!(
@@ -213,16 +229,16 @@ mod test {
 
         assert_eq!(
             get_attribute_value_impl(&meta, &["level0", "level1_1", "level2"]),
-            Some(&lit_str("bye"))
+            Some(lit_str("bye"))
         );
 
         let attr: Attribute = parse_quote!(#[doc = "hi"]);
 
-        let meta = attr.parse_meta().unwrap();
+        let meta = attr.meta;
 
         assert_eq!(
             get_attribute_value_impl(&meta, &["doc"]),
-            Some(&lit_str("hi"))
+            Some(lit_str("hi"))
         );
     }
 
@@ -264,7 +280,7 @@ mod test {
         let attr: Attribute =
             parse_quote!(#[level0(level1 = "hi", level1 = "hi", level1_1(level2 = "bye"))]);
 
-        let meta = attr.parse_meta().unwrap();
+        let meta = attr.meta;
 
         let mut result = HashMap::new();
         get_attribute_map_impl(&mut result, &meta, "", ".");
