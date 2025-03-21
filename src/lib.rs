@@ -1,164 +1,132 @@
 mod lit_cast;
 
-use std::collections::HashMap;
-
 use pmutil::ToTokensExt;
+use std::collections::HashMap;
 use syn::punctuated::Punctuated;
-use syn::{AttrStyle, Attribute, Expr, ExprLit, Lit, Meta, MetaNameValue, Token};
+use syn::{AttrStyle, Attribute, Expr, ExprLit, Lit, Meta, MetaList, MetaNameValue, Result, Token};
 
 use crate::lit_cast::FromLit;
 
-pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
-    for attr in attrs {
-        if attr.style != AttrStyle::Outer {
-            continue;
+fn check_and_pop_hd<'a>(meta: &Meta, id: &'a [&'a str]) -> Option<&'a [&'a str]> {
+    id.split_first().and_then(|(hd, tl)| {
+        if meta.path().is_ident(hd) {
+            Some(tl)
+        } else {
+            None
         }
-
-        let meta = &attr.meta;
-        if contains_attribute_impl(&meta, &id) {
-            return true;
-        }
-    }
-
-    false
+    })
 }
 
-fn contains_attribute_impl<'a>(meta: &'a Meta, id: &[&str]) -> bool {
-    if id.is_empty() {
-        return false;
-    }
+fn iter_meta_list<T, F>(meta_list: &MetaList, mut f: F) -> Result<T>
+where
+    F: FnMut(&mut syn::punctuated::Iter<Meta>) -> T,
+{
+    meta_list
+        .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+        .map(|nested_metas| f(&mut nested_metas.iter()))
+}
+
+pub fn contains_attribute(attrs: &[Attribute], id: &[&str]) -> bool {
+    attrs.iter().any(|Attribute { style, meta, .. }| {
+        *style == AttrStyle::Outer && contains_attribute_impl(meta, id)
+    })
+}
+
+fn contains_attribute_impl(meta: &Meta, id: &[&str]) -> bool {
+    let id = match check_and_pop_hd(meta, id) {
+        Some(id) => id,
+        None => {
+            return false;
+        }
+    };
 
     match meta {
-        Meta::Path(path) => id.len() == 1 && path.is_ident(id[0]),
-        Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
-            match meta_list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
-                Ok(nested_meta) => {
-                    for meta in nested_meta {
-                        if contains_attribute_impl(&meta, &id[1..]) {
-                            return true;
-                        }
-                    }
-                    false
-                }
-                Err(..) => false,
-            }
-        }
-        _ => false,
+        Meta::Path(..) => id.is_empty(),
+        Meta::List(meta_list) => iter_meta_list(meta_list, |iter| {
+            iter.any(|meta| contains_attribute_impl(meta, id))
+        })
+        .unwrap_or(false),
+        Meta::NameValue(..) => false,
     }
 }
 
 pub fn get_attribute_value<T: FromLit>(attrs: &[Attribute], id: &[&str]) -> Option<T> {
-    for attr in attrs {
-        if attr.style != AttrStyle::Outer {
-            continue;
+    attrs.iter().find_map(|Attribute { style, meta, .. }| {
+        if *style != AttrStyle::Outer {
+            return None;
         }
-
-        let meta = &attr.meta;
-        if let Some(value) = get_attribute_value_impl(&meta, &id) {
-            if let Ok(parsed) = T::from_lit(value.clone()) {
-                return Some(parsed);
-            }
-        }
-    }
-
-    None
+        get_attribute_value_impl(meta, id).and_then(|value| T::from_lit(value).ok())
+    })
 }
 
-fn get_attribute_value_impl<'a>(meta: &'a Meta, id: &[&str]) -> Option<Lit> {
-    if id.is_empty() {
-        return None;
-    }
+fn get_attribute_value_impl(meta: &Meta, id: &[&str]) -> Option<Lit> {
+    let id = match check_and_pop_hd(meta, id) {
+        Some(id) => id,
+        None => {
+            return None;
+        }
+    };
 
     match meta {
         Meta::NameValue(MetaNameValue {
-            path,
             value: Expr::Lit(ExprLit { lit, .. }),
             ..
-        }) if path.is_ident(id[0]) => Some(lit.clone()),
-        Meta::List(meta_list) if meta_list.path.is_ident(id[0]) => {
-            match meta_list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
-                Ok(nested_meta) => {
-                    for meta in nested_meta {
-                        let r = get_attribute_value_impl(&meta, &id[1..]);
-                        if r.is_some() {
-                            return r;
-                        }
-                    }
-                    None
-                }
-                Err(..) => None,
-            }
-        }
-        _ => None,
+        }) if id.is_empty() => Some(lit.clone()),
+        Meta::List(meta_list) => iter_meta_list(meta_list, |iter| {
+            iter.find_map(|meta| get_attribute_value_impl(meta, id))
+        })
+        .unwrap_or(None),
+        Meta::Path(..) | Meta::NameValue(..) => None,
     }
 }
 
 pub fn get_attribute_map(attrs: &[Attribute], separator: &str) -> HashMap<String, Vec<Lit>> {
     let mut result = HashMap::new();
-
-    for attr in attrs {
-        if attr.style != AttrStyle::Outer {
-            continue;
+    attrs.iter().for_each(|Attribute { style, meta, .. }| {
+        if *style == AttrStyle::Outer {
+            get_attribute_map_impl(&mut result, meta, "", separator);
         }
-
-        let meta = &attr.meta;
-        get_attribute_map_impl(&mut result, &meta, "", separator);
-    }
-
+    });
     result
 }
 
-fn get_attribute_map_impl<'a>(
+fn get_attribute_map_impl(
     map: &mut HashMap<String, Vec<Lit>>,
     meta: &Meta,
     prefix: &str,
     separator: &str,
-) {
+) -> () {
+    let key = {
+        let path = meta.path().dump();
+        if prefix.is_empty() {
+            path.to_string()
+        } else {
+            format!("{}{}{}", prefix, separator, path)
+        }
+    };
+
     match meta {
-        Meta::Path(path) => {
-            let key = if prefix.is_empty() {
-                path.dump().to_string()
-            } else {
-                format!("{}{}{}", prefix, separator, path.dump())
-            };
+        Meta::Path(..) => {
             assert!(!map.contains_key(&key), "{} already exists.", key);
             map.insert(key, vec![]);
         }
         Meta::NameValue(MetaNameValue {
-            path,
             value: Expr::Lit(ExprLit { lit, .. }),
             ..
-        }) => {
-            let key = if prefix.is_empty() {
-                path.dump().to_string()
-            } else {
-                format!("{}{}{}", prefix, separator, path.dump())
-            };
-            map.get_mut(&key)
-                .map(|value| {
-                    assert!(!value.is_empty(), "conflicts among `{}` attributes.", key);
-                    value.push(lit.clone());
-                })
-                .unwrap_or_else(|| {
-                    map.insert(key, vec![lit.clone()]);
-                })
-        }
+        }) => map
+            .get_mut(&key)
+            .map(|values| {
+                assert!(!values.is_empty(), "conflicts among `{}` attributes.", key);
+                values.push(lit.clone());
+            })
+            .unwrap_or_else(|| {
+                map.insert(key, vec![lit.clone()]);
+            }),
         Meta::NameValue(..) => (),
-        Meta::List(meta_list) => {
-            let key = if prefix.is_empty() {
-                meta_list.path.dump().to_string()
-            } else {
-                format!("{}{}{}", prefix, separator, meta_list.path.dump())
-            };
-            match meta_list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
-                Ok(nested_meta) => {
-                    for meta in nested_meta {
-                        get_attribute_map_impl(map, &meta, &key, separator);
-                    }
-                }
-                Err(..) => (),
-            }
-        }
+        Meta::List(meta_list) => iter_meta_list(meta_list, |iter| {
+            iter.for_each(|meta| get_attribute_map_impl(map, meta, &key, separator))
+        })
+        .unwrap_or(()),
     }
 }
 
